@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "greedy-server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "@greedy/server"],
+      "port": 3888
+    },
+    {
+      "name": "greedy-client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "@greedy/client"],
+      "port": 6888
+    }
+  ]
+}

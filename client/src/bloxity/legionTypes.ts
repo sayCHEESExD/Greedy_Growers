@@ -144,6 +144,40 @@ type PurchaseApi = {
   getBalance(): Promise<number>;
 };
 
+/** How a rewarded ad ended. Only 'completed' is worth a reward (and carries the token the server verifies). */
+export interface LegionRewardedResult {
+  readonly status: 'completed' | 'skipped' | 'no-fill' | 'blocked' | 'denied' | 'disabled' | 'error' | string;
+  readonly rewardToken?: string;
+  readonly reason?: string;
+}
+
+export type LegionAdScreenType = 'menu' | 'lobby' | 'results' | 'panel';
+
+/** A banner position along the game's edges and corners. */
+export type LegionAdPosition =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'middle-left'
+  | 'middle-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+export type LegionAdSize = '300x250' | '728x90' | '300x600' | '320x50' | '320x100' | '160x600';
+
+export interface LegionAdScreenOptions {
+  /** Positions the game's own UI needs: no banner goes there. */
+  readonly skip?: readonly LegionAdPosition[];
+  /** The size to prefer at a position (used only where Boxity allows it). */
+  readonly sizes?: Partial<Record<LegionAdPosition, LegionAdSize>>;
+}
+
+export interface LegionAdScreen {
+  readonly state: 'pending' | 'showing' | 'closed';
+  hide(): void;
+}
+
 export interface LegionSdk {
   init(options: { gameSlug: string }): void;
   environment?(): LegionEnvironment;
@@ -254,6 +288,16 @@ export interface LegionSdk {
 
   /** Gems, the platform currency (server-authoritative; the game passes skus only). */
   gems?: PurchaseApi;
+
+  /** Boxity runs every ad itself, over the game; these only ask and listen. */
+  ads?: {
+    isAvailable(): boolean;
+    showRewarded(placement: string): Promise<LegionRewardedResult>;
+    screen(type: LegionAdScreenType, options?: LegionAdScreenOptions): LegionAdScreen;
+    hideScreen(): void;
+    onBreakStart(callback: (info?: unknown) => void): () => void;
+    onBreakEnd(callback: (info?: unknown) => void): () => void;
+  };
   /** Deprecated alias of `gems`, kept for SDK builds that predate it. */
   bux?: PurchaseApi;
 

@@ -1,5 +1,6 @@
 import { Client, Room, ServerError } from '@colyseus/core';
 import {
+  AD_SALE_COOLDOWN_MS,
   MAX_PLAYERS_PER_ROOM,
   MUTATIONS,
   MessageType,
@@ -24,6 +25,7 @@ import {
   type AuthStateMessage,
   type AuthStatus,
   type BuySeedMessage,
+  type AdRewardMessage,
   type EmoteMessage,
   type EquipMessage,
   type EquipPetMessage,
@@ -58,6 +60,7 @@ import {
   type LikeMessage,
 } from '@greedy/shared';
 import { tokenHash, verifyGameToken } from '../auth/BloxityAuth.js';
+import { verifyRewardToken } from '../bloxity/adReward.js';
 import { trackFarmers } from '../bloxity/liveFarmers.js';
 import { serverConfig } from '../config/serverConfig.js';
 import { addCash, addSeeds, addStack, addTickets, equip, syncPets, type Farmer } from '../farm/Farmer.js';
@@ -235,6 +238,7 @@ export class GameRoom extends Room<GameState> {
     this.action(MessageType.Redeem, (f, m: RedeemMessage) => this.market.redeem(f, String(m?.code ?? '')));
     this.action(MessageType.Like, (f, m: LikeMessage) => this.onLike(f, Number(m?.slot)));
     this.action(MessageType.Emote, (f, m: EmoteMessage) => this.onEmote(f, m?.id));
+    this.action(MessageType.AdReward, (f, m: AdRewardMessage) => void this.onAdReward(f, m?.token));
     this.action(MessageType.Tutorial, (f, m: TutorialMessage) => this.onTutorial(f, m));
     if (serverConfig.devCheats) this.action('dev', (f, m: DevMessage) => this.onDev(f, m));
 
@@ -661,6 +665,41 @@ export class GameRoom extends Room<GameState> {
   }
 
   /**
+   * A REWARDED AD WAS WATCHED: "2x next sale". Granted ONLY when Boxity
+   * verifies the token (once per token, this game, within five minutes) - a
+   * client saying it watched one is worth nothing. One at a time per player,
+   * and not again until the cooldown has run.
+   */
+  private async onAdReward(f: Farmer, token: unknown): Promise<void> {
+    if (typeof token !== 'string' || !token || token.length > 4096 || f.adPending) return;
+    const p = f.profile;
+    if (p.saleBoost) {
+      this.ctx.notify(f, 'info', 'Your next sale already pays double!');
+      return;
+    }
+    if (p.adSaleAt && Date.now() < p.adSaleAt + AD_SALE_COOLDOWN_MS) {
+      this.ctx.notify(f, 'info', 'That bonus is cooling down. Try again soon!');
+      return;
+    }
+    f.adPending = true;
+    try {
+      const valid = await verifyRewardToken(token);
+      // The player may have left (or switched profile) while Boxity answered.
+      if (this.farmers.get(f.sessionId) !== f) return;
+      if (!valid) {
+        this.ctx.notify(f, 'bad', 'The ad reward could not be confirmed.');
+        return;
+      }
+      f.profile.saleBoost = true;
+      f.profile.adSaleAt = Date.now();
+      f.dirty = true;
+      this.ctx.notify(f, 'gold', 'Your next sale pays 2x!');
+    } finally {
+      f.adPending = false;
+    }
+  }
+
+  /**
    * A Boxity emote. Cosmetic, so the id is only shape-checked: ownership is
    * Boxity's (it only offers entitled emotes) and an unknown id plays nothing.
    */
@@ -836,6 +875,8 @@ export class GameRoom extends Room<GameState> {
       codes: p.codes,
       likedSlots,
       predictions,
+      saleBoost: p.saleBoost,
+      adSaleReadyAt: p.adSaleAt ? p.adSaleAt + AD_SALE_COOLDOWN_MS : 0,
     };
   }
 

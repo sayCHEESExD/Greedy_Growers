@@ -1,4 +1,5 @@
 import {
+  AD_SALE_PLACEMENT,
   FERTILIZERS,
   MUTATIONS,
   PLOT,
@@ -71,9 +72,10 @@ import { SceneManager } from '../rendering/SceneManager.js';
 import { BloxityPanel } from '../ui/BloxityPanel.js';
 import { Hud, type HotbarItem, type PlantOption } from '../ui/Hud.js';
 import { IconFactory } from '../ui/IconFactory.js';
-import { anyModalOpen, closeTopModal } from '../ui/Modal.js';
+import { anyModalOpen, closeTopModal, onModalChange, topModalPanel } from '../ui/Modal.js';
 import {
   Dialogue,
+  type DialogueOption,
   IndexWindow,
   ItemsWindow,
   LeaderboardWindow,
@@ -96,6 +98,24 @@ import { tickWater } from '../world/Terrain.js';
 import { Weather } from '../world/Weather.js';
 
 const SCOPE = 'Game';
+
+/** What to tell a player whose rewarded ad did not complete: the real reason, never a blanket "it did not finish". */
+const adResultMessage = (status: string, reason?: string): string => {
+  switch (status) {
+    case 'skipped':
+      return 'The ad was skipped, so no bonus this time.';
+    case 'no-fill':
+      return 'No ad is available right now. Try again in a little while.';
+    case 'blocked':
+      return 'Ads are blocked in this browser, so the bonus is unavailable.';
+    case 'denied':
+      return reason ? `The ad was not allowed: ${reason}.` : 'The ad was not allowed right now.';
+    case 'disabled':
+      return 'Ads are not available here.';
+    default:
+      return 'The ad could not play. Please try again later.';
+  }
+};
 
 const isTyping = (target: EventTarget | null): boolean => {
   const element = target as HTMLElement | null;
@@ -186,6 +206,8 @@ export class Game {
   private readonly ghostMaterial = new MeshBasicMaterial({ color: 0x5aff7a, transparent: true, opacity: 0.55, depthWrite: false });
   /** The keepers' prompts stay quiet until then (just after a conversation closed). */
   private talkQuietUntil = 0;
+  /** An ad break is playing: the frame holds still. */
+  private adBreak = false;
   /** Where the open conversation started, or null. */
   private talkAnchor: { x: number; z: number } | null = null;
   /** The SELL button asked for the counter: open it on arrival, until then. 0 = not waiting. */
@@ -359,13 +381,29 @@ export class Game {
 
   startBloxity(): void {
     this.bloxity.start();
+    // Ad breaks may start at any time: pause the game and mute it, then resume.
+    this.bloxity.ads.onBreak(
+      () => this.setAdBreak(true),
+      () => this.setAdBreak(false),
+    );
+    // Screen ads: every full-screen panel is a 'panel' screen, laid out round the panel on top.
+    onModalChange(() => this.bloxity.ads.setPanel(topModalPanel()));
     // Boxity's toolbar and chat feed own the top-left: the HUD keeps clear.
     this.bloxity.onReservedAreasChange((areas) => this.avoidReserved(areas));
     document.body.classList.toggle('aoe-portal-embedded', this.bloxity.embedded);
   }
 
   /** Keep the HUD's rails clear of the screen areas Boxity draws over on the left. */
+  /** Hold the game still and silent for an ad break, and let it go after. */
+  private setAdBreak(on: boolean): void {
+    this.adBreak = on;
+    this.audio.setAdHold(on);
+    this.input.setSuppressed(on || anyModalOpen());
+    if (on) this.input.look.release();
+  }
+
   private avoidReserved(areas: readonly LegionReservedArea[]): void {
+    this.bloxity.ads.setReserved(areas);
     const half = window.innerWidth / 2;
     const bottom = areas.filter((area) => area.left < half).reduce((most, area) => Math.max(most, area.top + area.height), 0);
     this.hud.avoidReserved(bottom);
@@ -423,6 +461,8 @@ export class Game {
   // ----------------------------------------------------------------- frame
 
   update(delta: number, _now: number): void {
+    // An ad break: the game holds still and silent until Boxity ends it.
+    if (this.adBreak) return;
     const now = this.network.now();
     this.time += delta;
     const modal = anyModalOpen();
@@ -972,17 +1012,39 @@ export class Game {
 
   private openSell(): void {
     const stall = STALLS.find((s) => s.id === 'sell')!;
-    this.dialogue.open(
-      'sell',
-      [
-        { text: 'I want to sell my inventory', action: () => this.sell('all') },
-        { text: 'I want to sell this', action: () => this.sell('held') },
-        { text: 'Nevermind', action: () => this.closeTalk() },
-      ],
-      stall.keeper,
-      'Whatcha got for me?',
-    );
+    const boosted = this.self?.saleBoost ?? false;
+    const options: DialogueOption[] = [
+      { text: 'I want to sell my inventory', action: () => this.sell('all') },
+      { text: 'I want to sell this', action: () => this.sell('held') },
+    ];
+    // The rewarded ad: offered only while Boxity can show one, the bonus is not
+    // already waiting, and its cooldown (the server's clock) has run.
+    if (!boosted && this.bloxity.ads.available() && this.network.now() >= (this.self?.adSaleReadyAt ?? 0)) {
+      options.push({ text: '📺 Watch an ad: next sale pays 2x', action: () => void this.watchSaleAd() });
+    }
+    options.push({ text: 'Nevermind', action: () => this.closeTalk() });
+    this.dialogue.open('sell', options, stall.keeper, boosted ? 'Your next sale pays double!' : 'Whatcha got for me?');
     this.anchorTalk();
+  }
+
+  /**
+   * THE "2x NEXT SALE" REWARDED AD. Boxity plays it; only a 'completed' result
+   * is worth anything, and even then the SERVER grants the bonus, after Boxity
+   * verifies the result's token. Every other outcome says what really happened.
+   */
+  private async watchSaleAd(): Promise<void> {
+    this.closeTalk();
+    const result = await this.bloxity.ads.showRewarded(AD_SALE_PLACEMENT);
+    if (result.status === 'completed') {
+      if (result.rewardToken) this.network.adReward(result.rewardToken);
+      else {
+        logger.warn(SCOPE, 'rewarded ad completed without a reward token', result);
+        this.hud.notice('The ad finished, but no reward came back. Please try again.', 'bad');
+      }
+      return;
+    }
+    logger.info(SCOPE, 'rewarded ad not completed', result);
+    this.hud.notice(adResultMessage(result.status, result.reason), result.status === 'skipped' ? 'info' : 'bad');
   }
 
   /** Where the conversation started: walking off from here ends it. */

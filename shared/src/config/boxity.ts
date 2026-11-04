@@ -25,6 +25,17 @@ export const BOXITY_LEADERBOARDS: readonly BoxityBoard[] = [
   { id: 'best_tree', label: 'Biggest Tree', order: 'desc', mode: 'best', format: 'compact', reset: 'none' },
 ];
 
+/**
+ * THE REWARDED AD: watch one at the Sell stand and the next sale pays double.
+ * The developer chose this one reward (BLOXITY_CODE_METADATA.md: rewards: true).
+ * The placement name is Boxity's: lowercase letters, digits and hyphens.
+ */
+export const AD_SALE_PLACEMENT = 'double-sale';
+/** How long after one is granted another "2x next sale" may be earned. */
+export const AD_SALE_COOLDOWN_MS = 10 * 60_000;
+/** What the boosted sale pays, times the usual. */
+export const AD_SALE_MULTIPLIER = 2;
+
 /** One "Only in this game" stat on a Boxity profile. */
 export interface BoxityStat {
   readonly key: string;

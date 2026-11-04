@@ -95,6 +95,10 @@ export interface SelfState {
   readonly likedSlots: readonly number[];
   /** Prediction Potion readings: tree id -> a multiplier it will safely reach. */
   readonly predictions: Readonly<Record<number, number>>;
+  /** The next sale pays double (a rewarded ad was watched). */
+  readonly saleBoost: boolean;
+  /** Server clock (ms) from which another "2x next sale" ad may be watched. */
+  readonly adSaleReadyAt: number;
 }
 
 /** Tutorial steps, in the reference's words. */

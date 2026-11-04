@@ -131,6 +131,11 @@ export interface LikeMessage {
   slot: number;
 }
 
+/** A rewarded ad's token. Worth nothing until the server has Boxity verify it. */
+export interface AdRewardMessage {
+  token: string;
+}
+
 export interface EmoteMessage {
   /** A Boxity emote catalogue id. */
   id: string;

@@ -1,4 +1,5 @@
 import {
+  AD_SALE_MULTIPLIER,
   CAN_OF_WORMS_TICKETS,
   CODES,
   MAX_EQUIPPED_PETS,
@@ -143,10 +144,14 @@ export class MarketService {
         return;
       }
     }
-    const amount = Math.max(1, Math.floor(total * bonus));
+    // A watched rewarded ad doubles this one sale, then it is spent.
+    const boosted = f.profile.saleBoost;
+    const amount = Math.max(1, Math.floor(total * bonus * (boosted ? AD_SALE_MULTIPLIER : 1)));
+    if (boosted) f.profile.saleBoost = false;
     removeItems(f, sold);
     addCash(f, amount, true);
     this.ctx.send(f, MessageType.Sold, { amount, count: sold.size } satisfies SoldMessage);
+    if (boosted) this.ctx.notify(f, 'gold', 'Ad bonus: this sale paid double!');
     this.ctx.tutorial(f, TUTORIAL.sell);
     // "You can afford Pine Seeds!" - the cheapest river seed this sale put in reach.
     const before = f.profile.cash - amount;

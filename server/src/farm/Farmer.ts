@@ -39,6 +39,8 @@ export interface Farmer {
   /** Prediction Potion readings, by sapling id. */
   predictions: Map<number, number>;
   ranks: { cash: number; earned: number; rebirths: number; best: number };
+  /** A rewarded-ad token is being verified with Boxity: a second one waits its turn. */
+  adPending?: boolean;
 }
 
 // ------------------------------------------------------------------ purse

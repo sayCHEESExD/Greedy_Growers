@@ -2,6 +2,22 @@ import { fitToViewport, installUiScale, onUiResize } from './scaleUi.js';
 import { injectGameStyles } from './styles.js';
 
 const open = new Set<Modal>();
+const changeListeners = new Set<() => void>();
+const changed = (): void => {
+  for (const listener of changeListeners) listener();
+};
+
+/** Hear when a window opens or closes (the screen-ad layout follows the top one). */
+export const onModalChange = (listener: () => void): (() => void) => {
+  changeListeners.add(listener);
+  return () => changeListeners.delete(listener);
+};
+
+/** The panel box of the window on top, or null when none is open. */
+export const topModalPanel = (): HTMLElement | null => {
+  const top = [...open].pop();
+  return (top?.shade.firstElementChild as HTMLElement | null) ?? null;
+};
 
 /** True while any window owns the screen: movement and world clicks pause. */
 export const anyModalOpen = (): boolean => open.size > 0;
@@ -61,6 +77,7 @@ export class Modal {
     this.shade.hidden = false;
     open.add(this);
     this.refresh();
+    changed();
   }
 
   close(): void {
@@ -68,6 +85,7 @@ export class Modal {
     this.shade.hidden = true;
     open.delete(this);
     this.onClose?.();
+    changed();
   }
 
   toggle(): void {

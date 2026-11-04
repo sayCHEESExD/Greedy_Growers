@@ -79,6 +79,8 @@ export const MessageType = {
   Like: 'like',
   /** Client -> server: play an emote. */
   Emote: 'emote',
+  /** Client -> server: a rewarded ad finished; its Boxity reward token, for the server to verify. */
+  AdReward: 'adReward',
   /** Client -> server: the tutorial was skipped. */
   Tutorial: 'tutorial',
 

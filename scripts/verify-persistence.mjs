@@ -188,7 +188,9 @@ const joinAs = async (port, { playerId, token = null, name } = {}) => {
   room.onMessage('self', (message) => {
     room.self = message;
   });
-  for (const type of ['notice', 'say', 'fx', 'harvested', 'sold']) room.onMessage(type, () => {});
+  room.notices = [];
+  room.onMessage('notice', (message) => room.notices.push(String(message?.text ?? '')));
+  for (const type of ['say', 'fx', 'harvested', 'sold']) room.onMessage(type, () => {});
   await waitFor(() => room.self, 'own private state');
   return room;
 };
@@ -489,6 +491,26 @@ const runSuite = async (ctx) => {
     check(me(existing).cash === ctx.accountTotal, 'an account that has progress is left untouched');
     await leaveAndWait(existing);
     check(!(await profileOf(reader, accountKeyFor('bxguest2'))).migratedTo, 'and the guest is not retired for it');
+  }
+
+  console.log(`\n${kind}: rewarded ad - 2x next sale`);
+  {
+    const noticed = (room, text, label) => waitFor(() => room.notices.find((t) => t.includes(text)) ?? null, label).then(() => true, () => false);
+    const s = await joinAs(port(), { playerId: 'p_ads', token: 'valid:adsacct' });
+    s.send('adReward', { token: 'not-a-real-token' });
+    check((await noticed(s, 'could not be confirmed', 'bogus refused')) && me(s).saleBoost === false, 'a token Boxity does not confirm grants nothing');
+    await sleep(200);
+    s.send('adReward', { token: 'ad-ok:1' });
+    check(await settled(s, (p) => p.saleBoost === true && p.adSaleReadyAt > Date.now(), 'the bonus'), 'a verified ad grants "2x next sale" and starts its cooldown');
+    await sleep(200);
+    s.send('adReward', { token: 'ad-ok:2' });
+    check(await noticed(s, 'already pays double', 'second refused'), 'a second ad while the bonus waits is refused');
+    await leaveAndWait(s);
+    const saved = await waitForProfile(reader, accountKeyFor('adsacct'), (p) => p.saleBoost === true, 'the saved bonus');
+    check(saved.adSaleAt > 0, 'the bonus and its cooldown are saved on the profile');
+    const again = await joinAs(port(), { playerId: 'p_ads', token: 'valid:adsacct' });
+    check(me(again).saleBoost === true, 'the bonus survives a reconnect');
+    await leaveAndWait(again);
   }
 
   console.log(`\n${kind}: purchases`);

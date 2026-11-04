@@ -130,6 +130,10 @@ export interface ProgressFields {
   codes: string[];
   likedDay: number;
   likedKeys: string[];
+  /** A watched rewarded ad's "2x next sale", not yet spent. */
+  saleBoost: boolean;
+  /** Wall clock (ms) the last "2x next sale" was granted, for its cooldown. */
+  adSaleAt: number;
 }
 
 /** What one save writes. */
@@ -336,6 +340,8 @@ export const emptyProgress = (): ProgressFields => ({
   codes: [],
   likedDay: 0,
   likedKeys: [],
+  saleBoost: false,
+  adSaleAt: 0,
 });
 
 /** Just the progression of a profile, coerced. A missing field is the fresh player's. */
@@ -391,6 +397,8 @@ export const progressOf = (raw: Partial<ProgressFields> | Record<string, unknown
     codes: list(source['codes'], 50).filter((c): c is string => typeof c === 'string').map((c) => c.slice(0, 24)),
     likedDay: int(source['likedDay']),
     likedKeys: list(source['likedKeys'], 100).filter((key): key is string => typeof key === 'string').map((key) => key.slice(0, 96)),
+    saleBoost: source['saleBoost'] === true,
+    adSaleAt: int(source['adSaleAt']),
   };
 };
 

@@ -1,6 +1,7 @@
 import { CanvasTexture, SRGBColorSpace, Sprite, SpriteMaterial, type Object3D } from 'three';
 import { BOXITY_LEADERBOARDS } from '@greedy/shared';
 import { logger } from '../util/logger.js';
+import { BloxityAds } from './BloxityAds.js';
 import { loadEmoteCatalogue } from './emotes.js';
 import type {
   LegionChatMessage,
@@ -133,6 +134,8 @@ const asBool = (value: string): boolean => value === 'true';
  * rendering a stale name.
  */
 export class Bloxity {
+  /** Ad breaks, rewarded ads and screen ads - all run by Boxity, over the game. */
+  readonly ads = new BloxityAds(() => window.Legion?.SDK?.ads ?? null);
   private readonly host: BloxityHost;
   private readonly unsubscribes: (() => void)[] = [];
 

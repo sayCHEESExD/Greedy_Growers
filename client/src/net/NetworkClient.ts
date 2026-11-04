@@ -400,6 +400,11 @@ export class NetworkClient {
     this.send(MessageType.Emote, { id });
   }
 
+  /** A rewarded ad completed: hand its token to the server, which has Boxity verify it. */
+  adReward(token: string): void {
+    this.send(MessageType.AdReward, { token });
+  }
+
   tutorial(skip: boolean): void {
     this.send(MessageType.Tutorial, { skip });
   }

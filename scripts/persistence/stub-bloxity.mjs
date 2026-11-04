@@ -37,8 +37,28 @@ const headerOf = (init, name) => {
 const json = (status, body) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
+/**
+ * The rewarded-ad verify route: a token "ad-ok:<n>" is valid once (as Boxity's
+ * are), anything else - or a second use - is not; a request naming another
+ * gameSlug is never valid.
+ */
+const AD_VERIFY_PATH = '/v1/ads/reward/verify';
+const spentAdTokens = new Set();
+
 globalThis.fetch = async (input, init) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+  if (String(url).endsWith(AD_VERIFY_PATH)) {
+    let body = {};
+    try {
+      body = JSON.parse(init?.body ?? '{}');
+    } catch {
+      /* an unparseable body is no token */
+    }
+    const token = String(body.rewardToken ?? '');
+    const ok = body.gameSlug === EXPECTED_SLUG && token.startsWith('ad-ok:') && !spentAdTokens.has(token);
+    if (ok) spentAdTokens.add(token);
+    return json(200, ok ? { valid: true } : { valid: false, reason: spentAdTokens.has(token) ? 'used' : 'unknown' });
+  }
   if (!String(url).endsWith(VERIFY_PATH)) return realFetch(input, init);
 
   if ((init?.method ?? 'GET') !== 'POST') return json(404, { message: 'Route not found', statusCode: 404 });

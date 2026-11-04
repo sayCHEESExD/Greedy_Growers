@@ -260,6 +260,8 @@ export class AudioManager {
   private footstepGain: GainNode | null = null;
 
   private muted = false;
+  /** An ad break is playing: silent until it ends, whatever the player's own mute says. */
+  private adHold = false;
   private started = false;
 
   /** The portal's master and music sliders, 0..1. Both default to full. */
@@ -297,7 +299,7 @@ export class AudioManager {
       // Built at the level the portal has ALREADY set: settings arrive before
       // the first user gesture, so a context created at full volume would be
       // loud for exactly as long as it took the next slider change to arrive.
-      this.master.gain.value = this.muted ? 0 : this.masterLevel;
+      this.master.gain.value = this.muted || this.adHold ? 0 : this.masterLevel;
 
       /*
        * A SAFETY LIMITER, and it is what buys the mix its headroom.
@@ -395,15 +397,26 @@ export class AudioManager {
 
   private applyMaster(): void {
     if (this.master && this.context) {
-      const target = this.muted ? 0 : this.masterLevel;
+      const target = this.muted || this.adHold ? 0 : this.masterLevel;
       this.master.gain.setTargetAtTime(target, this.context.currentTime, 0.05);
     }
 
     // A muted stream is PAUSED, not merely silenced. Leaving it running would
     // keep decoding a file nobody can hear, and on a phone that is battery
     // spent on nothing.
-    if (this.muted) this.musicElement?.pause();
+    if (this.muted || this.adHold) this.musicElement?.pause();
     else this.ensureMusic();
+  }
+
+  /**
+   * Silence everything for an ad break, and bring it back after. Separate from
+   * the player's mute, so a break never un-mutes a game they had muted.
+   */
+  setAdHold(hold: boolean): void {
+    if (hold === this.adHold) return;
+    this.adHold = hold;
+    if (hold) this.stopFootsteps();
+    this.applyMaster();
   }
 
   toggleMuted(): boolean {
@@ -758,7 +771,7 @@ export class AudioManager {
 
   /** Music is wanted whenever audio has started and the game is not muted. */
   private get musicWanted(): boolean {
-    return this.started && !this.muted && !!this.context && !!this.musicBus;
+    return this.started && !this.muted && !this.adHold && !!this.context && !!this.musicBus;
   }
 
   /**
